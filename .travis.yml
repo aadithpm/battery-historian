@@ -4,7 +4,7 @@ go:
 
 before_install:
   - sudo apt-get update -qq
-  - sudo apt-get install -qq python-2.7 openjdk-7-jdk
+  - sudo apt-get install -qq python2.7 openjdk-7-jdk
 install:
   - go get -d -u ./...
   - go get github.com/laher/goxc
