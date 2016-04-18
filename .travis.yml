@@ -4,12 +4,16 @@ go:
 before_install:
 - sudo apt-get update -qq
 - sudo apt-get install -qq python2.7 openjdk-7-jdk
+env:
+  global:
+    - GOPATH="$HOME/gopath"
+    - PATH="$HOME/gopath/bin:$PATH"
 install:
 - go get -d -u ./...
 - go get github.com/laher/goxc
-- export PATH=$PATH:/home/travis/gopath/bin
 script:
 - go run setup.go
+- cp -a compiled templates static cmd/battery-historian/
 - goxc -wd=cmd/battery-historian -include='README*,compiled/,templates/,static/'
 deploy:
   provider: releases
