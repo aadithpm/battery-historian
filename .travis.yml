@@ -8,6 +8,8 @@ env:
   global:
     - GOPATH="$HOME/gopath"
     - PATH="$HOME/gopath/bin:$PATH"
+  matrix:
+    - 
 install:
 - go get -d -u ./...
 - go get github.com/laher/goxc
@@ -33,6 +35,12 @@ deploy:
     - "/home/travis/gopath/bin/battery-historian-xc/snapshot/battery-historian_netbsd_amd64.zip"
     - "/home/travis/gopath/bin/battery-historian-xc/snapshot/battery-historian_netbsd_arm.zip"
     - "/home/travis/gopath/bin/battery-historian-xc/snapshot/battery-historian_plan9_386.zip"
+    - "/home/travis/gopath/bin/battery-historian-xc/snapshot/battery-historian_linux_386.tar.gz"
+    - "/home/travis/gopath/bin/battery-historian-xc/snapshot/battery-historian_linux_amd64.tar.gz"
+    - "/home/travis/gopath/bin/battery-historian-xc/snapshot/battery-historian_linux_arm.tar.gz"
+    - "/home/travis/gopath/bin/battery-historian-xc/snapshot/battery-historian_snapshot_i386.deb"
+    - "/home/travis/gopath/bin/battery-historian-xc/snapshot/battery-historian_snapshot_amd64.deb"
+    - "/home/travis/gopath/bin/battery-historian-xc/snapshot/battery-historian_snapshot_armhf.deb"
   skip_cleanup: true
   on:
     repo: bobobo1618/battery-historian
