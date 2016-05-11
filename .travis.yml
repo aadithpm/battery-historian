@@ -15,8 +15,8 @@ install:
 - go get github.com/laher/goxc
 script:
 - go run setup.go
-- cp -a compiled templates static scripts third_party cmd/battery-historian/
-- goxc -wd=cmd/battery-historian -include='README*,compiled/,templates/,static/,scripts/,third_party/'
+- cp -a compiled templates static scripts cmd/battery-historian/
+- goxc -wd=cmd/battery-historian -include='README*,compiled/,templates/,static/,scripts/'
 deploy:
   provider: releases
   api_key:
