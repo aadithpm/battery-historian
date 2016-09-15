@@ -1,0 +1,46 @@
+language: go
+go:
+- 1.6
+before_install:
+- sudo apt-get update -qq
+- sudo apt-get install -qq python2.7 openjdk-7-jdk
+env:
+  global:
+    - GOPATH="$HOME/gopath"
+    - PATH="$HOME/gopath/bin:$PATH"
+  matrix:
+    - 
+install:
+- go get -d -u ./...
+- go get github.com/laher/goxc
+script:
+- go run setup.go
+- cp -a compiled templates static scripts cmd/battery-historian/
+- goxc -wd=cmd/battery-historian -include='README*,compiled/,templates/,static/,scripts/'
+deploy:
+  provider: releases
+  api_key:
+    secure: YEPHhQcSp9iVHeGJ40/CTVY4POpNeGfoecgbP08HWg3tGm9Tb8c3iBGiLKsO9ukn1HjVXlDBe5qYSXhC7uOyyLjze6O4CGZFshrOxvfotHPPPxXGrq7mdZGnjUpHLqX4/WSH5uYPs9JrvQ3a0JveJ/pf65BOjR/dj20OOh7LqX5zRT8amXLimgkJPCZmhqehk45+jGg7F5b1h+gL4oekYDTuVYu4VmbBnMlPGkxn8cbCxhVkULbME47Fb3YfOiNAT/xJ/osJ5ETbDhoGfk7Pbyi49zAHgPVDb5PWundboYxDP3zkZuBMcc83ADB8IL7D+Yf2ASRfeLRGW3+UtG9eSGBRoiXPYiP+k7plGP/zwqUoFNJwkfc9ti/jWS/B1i5UY4hGV80bPYBPC93zbLhiZTboAU9P4r+AockDqe139lnDZpySZ6jJj8dxMBw3pF81gixtpylnY3rrDt8sGFoH5dFHSk0V5fI1xgsySnt/j9ZdjqRoXYE06G+r+BjTJNmyEmJKnY4CQmP/qfoXhSUavBIYZL/pHslR7F2v88KOs/wo5XkQDpP4NRFovCii0ExKnkKaeVB+qebWlZwaYTWfiChuNQR74iVGrQkwx2vY6NF0BeKIyuhL1EJDAn09CzpNRXAG3i8R2w/qZ09X08IeYrMeDb5PWbSU8iqq/knbyAk=
+  file: 
+    - "/home/travis/gopath/bin/battery-historian-xc/snapshot/battery-historian_darwin_386.zip"
+    - "/home/travis/gopath/bin/battery-historian-xc/snapshot/battery-historian_darwin_amd64.zip"
+    - "/home/travis/gopath/bin/battery-historian-xc/snapshot/battery-historian_freebsd_386.zip"
+    - "/home/travis/gopath/bin/battery-historian-xc/snapshot/battery-historian_freebsd_amd64.zip"
+    - "/home/travis/gopath/bin/battery-historian-xc/snapshot/battery-historian_freebsd_arm.zip"
+    - "/home/travis/gopath/bin/battery-historian-xc/snapshot/battery-historian_openbsd_386.zip"
+    - "/home/travis/gopath/bin/battery-historian-xc/snapshot/battery-historian_openbsd_amd64.zip"
+    - "/home/travis/gopath/bin/battery-historian-xc/snapshot/battery-historian_windows_386.zip"
+    - "/home/travis/gopath/bin/battery-historian-xc/snapshot/battery-historian_windows_amd64.zip"
+    - "/home/travis/gopath/bin/battery-historian-xc/snapshot/battery-historian_netbsd_386.zip"
+    - "/home/travis/gopath/bin/battery-historian-xc/snapshot/battery-historian_netbsd_amd64.zip"
+    - "/home/travis/gopath/bin/battery-historian-xc/snapshot/battery-historian_netbsd_arm.zip"
+    - "/home/travis/gopath/bin/battery-historian-xc/snapshot/battery-historian_plan9_386.zip"
+    - "/home/travis/gopath/bin/battery-historian-xc/snapshot/battery-historian_linux_386.tar.gz"
+    - "/home/travis/gopath/bin/battery-historian-xc/snapshot/battery-historian_linux_amd64.tar.gz"
+    - "/home/travis/gopath/bin/battery-historian-xc/snapshot/battery-historian_linux_arm.tar.gz"
+    - "/home/travis/gopath/bin/battery-historian-xc/snapshot/battery-historian_snapshot_i386.deb"
+    - "/home/travis/gopath/bin/battery-historian-xc/snapshot/battery-historian_snapshot_amd64.deb"
+    - "/home/travis/gopath/bin/battery-historian-xc/snapshot/battery-historian_snapshot_armhf.deb"
+  skip_cleanup: true
+  on:
+    repo: bobobo1618/battery-historian
