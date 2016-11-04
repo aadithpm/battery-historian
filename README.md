@@ -60,7 +60,14 @@ go run cmd/battery-historian/battery-historian.go [--port <default:9999>]
 
 To take a bug report from your Android device, you will need to enable USB debugging under `Settings > System > Developer Options`. On Android 4.2 and higher, the Developer options screen is hidden by default. You can enable this by following the instructions [here](<http://developer.android.com/tools/help/adb.html#Enabling>).
 
-To obtain a bug report from your development device:
+To obtain a bug report from your development device running Android 7.0 and
+higher:
+
+```
+$ adb bugreport bugreport.zip
+```
+
+For devices 6.0 and lower:
 
 ```
 $ adb bugreport > bugreport.txt
@@ -149,10 +156,10 @@ Historian plots and relates events in real time (PST or UTC), whereas kernel
 trace files logs events in jiffies (seconds since boot time). In order to relate
 these events there is a script which approximates the jiffies to utc time. The
 script reads the UTC times logged in the dmesg when the system suspends and
-resumes. The scope of the script is limited to the amount of time stamps present
+resumes. The scope of the script is limited to the amount of timestamps present
 in the dmesg. Since the script uses the dmesg log when the system suspends,
-there are different scripts for each of the device, with only difference being
-the device specific dmesg log it tries to find. These scripts have been
+there are different scripts for each device, with the only difference being
+the device-specific dmesg log it tries to find. These scripts have been
 integrated into the Battery Historian tool itself.
 
 ##### Powermonitor analysis

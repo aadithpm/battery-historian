@@ -27,6 +27,7 @@ goog.provide('historian.histogramstats.TopMetric');
 goog.require('goog.array');
 goog.require('goog.functions');
 goog.require('goog.string');
+goog.require('historian.tables');
 goog.require('historian.time');
 
 
@@ -134,9 +135,18 @@ historian.histogramstats.MAX_BARS = 9;
 historian.histogramstats.AB_MAX_BARS = 15;
 
 
+/** @const {number} */
+historian.histogramstats.LABEL_MARGIN = 8;
+
+
 /**
  * Singleton for storing file ordering global state.
- * @const {string}
+ * @const {{
+ *   getInstance: function(): {
+ *     get: function(number): string,
+ *     set: function(string, number)
+ *   }
+ * }}
  */
 historian.histogramstats.fileOrdering = (function() {
   var instance;
@@ -214,51 +224,57 @@ historian.histogramstats.Charts = {
 
 
 /**
- * File types to be compared.
- * @enum {string}
+ * @typedef {{
+ *   V: number,
+ *   L: string
+ * }}
  */
-historian.histogramstats.FileType = {
-  OLDER: 'Older File',
-  NEWER: 'Newer File',
-  EXTRACTED: 'Extracted File',
-  UPLOADED: 'Uploaded File'
-};
+historian.FloatLevel;
 
 
 /**
  * The SummaryStats data received from server analyzer.
  *
  * @typedef {{
- *  ScreenOffDischargeRatePerHr:    number,
- *  ScreenOnDischargeRatePerHr:     number,
- *  ScreenOffUptimePercentage:     number,
- *  ScreenOnTimePercentage:        number,
- *  PartialWakelockTimePercentage: number,
- *  KernelOverheadTimePercentage:  number,
- *  SignalScanningTimePercentage:  number,
- *  MobileActiveTimePercentage:    number,
- *  MobileKiloBytesPerHr:          number,
- *  WifiKiloBytesPerHr:            number,
- *  PhoneCallTimePercentage:       number,
- *  DeviceIdlingTimePercentage:    number,
- *  FullWakelockTimePercentage:    number,
- *  InteractiveTimePercentage:     number,
- *  WifiDischargeRatePerHr:        number,
- *  BluetoothDischargeRatePerHr:   number,
- *  WifiOnTimePercentage:          number,
- *  WifiTransmitTimePercentage:    number,
- *  WifiScanTimePercentage:        number,
- *  BluetoothOnTimePercentage:     number,
- *  TotalAppGPSUseTimePerHour:     number,
- *  TotalAppANRCount:              number,
- *  TotalAppCrashCount:            number,
- *  TotalAppSyncsPerHr:            number,
- *  TotalAppWakeupsPerHr:           number,
- *  TotalAppCPUPowerPct:           number,
- *  BluetoothTransmitTimePercentage:     number,
- *  DeviceIdleModeEnabledTimePercentage: number,
- *  TotalAppFlashlightUsePerHr:    number,
- *  TotalAppCameraUsePerHr:        number
+ *   ScreenOffDischargeRatePerHr:   historian.FloatLevel,
+ *   ScreenOnDischargeRatePerHr:    historian.FloatLevel,
+ *   ScreenOffUptimePercentage:     number,
+ *   ScreenOnTimePercentage:        number,
+ *   PartialWakelockTimePercentage: number,
+ *   KernelOverheadTimePercentage:  number,
+ *   SignalScanningTimePercentage:  number,
+ *   MobileActiveTimePercentage:    number,
+ *   MobileKiloBytesPerHr:          historian.FloatLevel,
+ *   WifiKiloBytesPerHr:            historian.FloatLevel,
+ *   PhoneCallTimePercentage:       number,
+ *   DeviceIdlingTimePercentage:    number,
+ *   FullWakelockTimePercentage:    number,
+ *   InteractiveTimePercentage:     number,
+ *   WifiDischargeRatePerHr:        historian.FloatLevel,
+ *   BluetoothDischargeRatePerHr:   historian.FloatLevel,
+ *   ModemDischargeRatePerHr:       historian.FloatLevel,
+ *   WifiOnTimePercentage:          number,
+ *   WifiTransferTimePercentage:    number,
+ *   WifiScanTimePercentage:        number,
+ *   BluetoothOnTimePercentage:     number,
+ *   ModemTransferTimePercentage:   number,
+ *   TotalAppGPSUseTimePerHour:     number,
+ *   TotalAppANRCount:              number,
+ *   TotalAppCrashCount:            number,
+ *   TotalAppSyncsPerHr:            number,
+ *   TotalAppWakeupsPerHr:           number,
+ *   TotalAppCPUPowerPct:           number,
+ *   BluetoothTransferTimePercentage:     number,
+ *   DeviceIdleModeEnabledTimePercentage: number,
+ *   LowPowerModeEnabledTimePercentage: number,
+ *   TotalAppFlashlightUsePerHr:    number,
+ *   TotalAppCameraUsePerHr:        number,
+ *   ConnectivityChanges:           number,
+ *   ScreenBrightness:   !Object<number>,
+ *   SignalStrength:     !Object<number>,
+ *   WifiSignalStrength: !Object<number>,
+ *   BluetoothState:     !Object<number>,
+ *   DataConnection:     !Object<number>
  * }}
  */
 historian.HistogramStats;
@@ -309,7 +325,7 @@ historian.histogramstats.Series;
  * Key - Name of the metric.
  * Value - Combined Checkin object for both the files.
  * @typedef {
- *   !Object<string, !Object>
+ *   !Object<string, !historian.requests.CombinedCheckinData>
  * }
  */
 historian.histogramstats.MetricMap;
@@ -611,19 +627,19 @@ historian.histogramstats.createCommDataSeries = function(data1, data2) {
     index++;
   }
 
-  if (data1.WifiDischargeRatePerHr.V != 0 || data2.WifiDischargeRatePerHr.V !=
-      0) {
+  if (data1.WifiDischargeRatePerHr.V != 0 ||
+      data2.WifiDischargeRatePerHr.V != 0) {
     series1.push([index, (data1.WifiDischargeRatePerHr.V).toFixed(2)]);
     series2.push([index, (data2.WifiDischargeRatePerHr.V).toFixed(2)]);
     ticks.push([index, 'Wifi Discharge Rate Per Hr']);
     index++;
   }
 
-  if (data1.WifiTransmitTimePercentage != 0 ||
-      data2.WifiTransmitTimePercentage != 0) {
-    series1.push([index, (data1.WifiTransmitTimePercentage).toFixed(2)]);
-    series2.push([index, (data2.WifiTransmitTimePercentage).toFixed(2)]);
-    ticks.push([index, 'Wifi Transmit Time Percentage']);
+  if (data1.WifiTransferTimePercentage != 0 ||
+      data2.WifiTransferTimePercentage != 0) {
+    series1.push([index, (data1.WifiTransferTimePercentage).toFixed(2)]);
+    series2.push([index, (data2.WifiTransferTimePercentage).toFixed(2)]);
+    ticks.push([index, 'Wifi Transfer Time Percentage']);
     index++;
   }
 
@@ -643,11 +659,27 @@ historian.histogramstats.createCommDataSeries = function(data1, data2) {
     index++;
   }
 
-  if (data1.BluetoothTransmitTimePercentage != 0 ||
-      data2.BluetoothTransmitTimePercentage != 0) {
-    series1.push([index, (data1.BluetoothTransmitTimePercentage).toFixed(2)]);
-    series2.push([index, (data2.BluetoothTransmitTimePercentage).toFixed(2)]);
-    ticks.push([index, 'Bluetooth Transmit Time Percentage']);
+  if (data1.BluetoothTransferTimePercentage != 0 ||
+      data2.BluetoothTransferTimePercentage != 0) {
+    series1.push([index, (data1.BluetoothTransferTimePercentage).toFixed(2)]);
+    series2.push([index, (data2.BluetoothTransferTimePercentage).toFixed(2)]);
+    ticks.push([index, 'Bluetooth Transfer Time Percentage']);
+    index++;
+  }
+
+  if (data1.ModemDischargeRatePerHr.V != 0 ||
+      data2.ModemDischargeRatePerHr.V != 0) {
+    series1.push([index, (data1.ModemDischargeRatePerHr.V).toFixed(2)]);
+    series2.push([index, (data2.ModemDischargeRatePerHr.V).toFixed(2)]);
+    ticks.push([index, 'Modem Discharge Rate Per Hr']);
+    index++;
+  }
+
+  if (data1.ModemTransferTimePercentage != 0 ||
+      data2.ModemTransferTimePercentage != 0) {
+    series1.push([index, (data1.ModemTransferTimePercentage).toFixed(2)]);
+    series2.push([index, (data2.ModemTransferTimePercentage).toFixed(2)]);
+    ticks.push([index, 'Modem Transfer Time Percentage']);
     index++;
   }
 
@@ -1011,8 +1043,8 @@ historian.histogramstats.createWakelockDataSeries = function(data1, data2) {
  * @param {string} toolTip Tooltip text.
  * @param {!Array} table The table we want to generate the top 3 from.
  * @param {string} dataType Type of the data.
- * @param {function(string, string): string} mapperFunc The function to be
- *     called for the content string.
+ * @param {function(!historian.requests.CombinedCheckinData, string): string}
+ *     mapperFunc The function to be called for the content string.
  * @return {!historian.histogramstats.ToolTip_}
  */
 historian.histogramstats.getTopThree = function(toolTip, table, dataType,
@@ -1064,10 +1096,10 @@ historian.histogramstats.getToolTipFor = function(label) {
             return curr;
           });
 
-    case historian.histogramstats.MOBILE_TRANSFER_RATE:
+    case historian.histogramstats.Labels.MOBILE_TRANSFER_RATE:
       dataType = historian.histogramstats.Constants.MOBILE;
 
-    case historian.histogramstats.WIFI_TRANSFER_RATE:
+    case historian.histogramstats.Labels.WIFI_TRANSFER_RATE:
       if (dataType == historian.histogramstats.Constants.BLANK) {
         dataType = historian.histogramstats.Constants.WIFI;
       }
@@ -1121,7 +1153,7 @@ historian.histogramstats.getToolTipFor = function(label) {
             return curr;
           });
 
-    case historian.histogramstats.TOTAL_APP_CPU_USE:
+    case historian.histogramstats.Labels.TOTAL_APP_CPU_USE:
       return historian.histogramstats.getTopThree(
           toolTipStart,
           historian.histogramstats.MetricMap[label],
@@ -1324,7 +1356,6 @@ historian.histogramstats.drawToolTips = function(tag, ticks, file) {
         previousPoint = item.datapoint;
 
         $(historian.histogramstats.Charts.TOOLTIP).remove();
-        var x = item.datapoint[0].toFixed(2);
         var y = item.datapoint[1].toFixed(2);
         // Get content for the tooltip.
         var label = item.series.xaxis.ticks[item.dataIndex].label;
@@ -2245,35 +2276,11 @@ historian.histogramstats.combineFileNames_ = function(fileName1, fileName2) {
 
 /**
  * Initializes file names based on the comparison entities.
- * File names are set as needed for 30 day history and regular bugreport
- * comparison use cases.
  * @param {string} fileName1 File name of the first file.
  * @param {string} fileName2 File name of the second file.
  * @private
  */
 historian.histogramstats.setFileNames_ = function(fileName1, fileName2) {
-  // If the files are from a regular A/B comparison, we use default strings
-  // File #1 and File #2 to refer to them. Else, we follow the below code
-  // to set new names for them.
-  var f1 = fileName1.split(':');
-  var f2 = fileName2.split(':');
-  if (!goog.array.isEmpty(f1) && !goog.array.isEmpty(f2)) {
-    var name1 = f1[0].trim();
-    var name2 = f2[0].trim();
-    // We save the new names only if we find the below pairs together.
-    // If none of the below match, we keep the default names.
-    if ((name1 == historian.histogramstats.FileType.OLDER &&
-        name2 == historian.histogramstats.FileType.NEWER) ||
-        (name2 == historian.histogramstats.FileType.OLDER &&
-        name1 == historian.histogramstats.FileType.NEWER) ||
-        (name1 == historian.histogramstats.FileType.UPLOADED &&
-        name2 == historian.histogramstats.FileType.EXTRACTED) ||
-        (name2 == historian.histogramstats.FileType.UPLOADED &&
-        name1 == historian.histogramstats.FileType.EXTRACTED)) {
-      historian.histogramstats.file1_ = name1;
-      historian.histogramstats.file2_ = name2;
-    }
-  }
   historian.histogramstats.fileOrdering.getInstance().set(
       historian.histogramstats.combineFileNames_(
       historian.histogramstats.file1_,
@@ -2307,8 +2314,8 @@ historian.histogramstats.addSelectOptions = function() {
  *     from the server.
  * @param {!historian.HistogramStats} stats2 Histogramstats received
  *     from the server.
- * @param {!Object} combinedCheckin Combined checkin data received
- *     from the server.
+ * @param {!historian.requests.CombinedCheckinSummary} combinedCheckin
+ *     Combined checkin data received from the server.
  * @param {string} fileName1 File name of the first file.
  * @param {string} fileName2 File name of the second file.
  */

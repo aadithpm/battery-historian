@@ -15,8 +15,8 @@
  */
 
 goog.provide('historian.LevelLine');
+goog.provide('historian.LevelLine.Data');
 
-goog.require('goog.array');
 goog.require('goog.asserts');
 goog.require('goog.string');
 goog.require('historian.Context');
@@ -24,8 +24,29 @@ goog.require('historian.constants');
 goog.require('historian.data');
 goog.require('historian.levelSummary');
 goog.require('historian.levelSummary.Dimensions');
+goog.require('historian.metrics.Csv');
 goog.require('historian.time');
 goog.require('historian.utils');
+
+
+// TODO: replace with goog.module.
+goog.scope(function() {
+
+
+/** @private @const {string} */
+var LINE_CLASS_ = 'level-line';
+
+
+/** @private @const {string} */
+var OPACITY_DEFAULT_ = '1.0';
+
+
+/** @private @const {string} */
+var POWERMONITOR_OPACITY_DEFAULT_ = '0.3';
+
+
+/** @private @const {string} */
+var SHOW_LINE_TOGGLE_ = '.show-line-overlay';
 
 
 
@@ -36,10 +57,14 @@ goog.require('historian.utils');
  * @param {!historian.Context} context The visualisation context.
  * @param {!historian.LevelData} levelData The level data to display.
  * @param {!historian.LevelSummaryData} levelSummaryData
+ * @param {!Object<!Array<!historian.Entry>>=} opt_levelSummaries
+ *     Additional data to display for each level drop.
+ * @param {jQuery=} opt_container The container the graph is rendered in.
  * @constructor
  * @struct
  */
-historian.LevelLine = function(context, levelData, levelSummaryData) {
+historian.LevelLine = function(context, levelData, levelSummaryData,
+    opt_levelSummaries, opt_container) {
   /** @private {!historian.Context} */
   this.context_ = context;
 
@@ -51,6 +76,9 @@ historian.LevelLine = function(context, levelData, levelSummaryData) {
 
   /** @private {!historian.LevelConfiguration} */
   this.config_ = levelData.getConfig();
+
+  /** @private {!Object<!Array<!historian.Entry>>|undefined} */
+  this.levelDetailSummary_ = opt_levelSummaries;
 
   /**
    * The actual data being displayed.
@@ -74,8 +102,23 @@ historian.LevelLine = function(context, levelData, levelSummaryData) {
    */
   this.timeInfo_ = new historian.LevelLine.TimeInfo_(
       this.context_, this.displayedLevelData_, this.config_,
-      this.levelSummaryData_);
+      this.levelSummaryData_, this.levelDetailSummary_);
 
+  /** @private {?jQuery} */
+  this.container_ = opt_container || null;
+
+  if (this.container_) {
+    if (levelData.getConfig().isRateOfChange) {
+      // If the user selected to show rate of change data, automatically
+      // check the show level line checkbox. Don't need to trigger the listener
+      // event - render will show or hide the line based on the checkbox.
+      this.container_.find(SHOW_LINE_TOGGLE_).prop('checked', true);
+    }
+    this.container_.find(SHOW_LINE_TOGGLE_).change(function(event) {
+      this.container_.find('.' + LINE_CLASS_)
+          .toggle($(event.target).is(':checked'));
+    }.bind(this));
+  }
   this.render();
 };
 
@@ -91,7 +134,7 @@ historian.LevelLine.LEGEND_SIZE_PX_ = 15;
  * Legend is rendered with this offset to the right of the svg.
  * @const {number}
  */
-historian.LevelLine.LEGEND_X_OFFSET = 35;
+historian.LevelLine.LEGEND_X_OFFSET = 50;
 
 
 /**
@@ -121,10 +164,6 @@ historian.LevelLine.LEGEND_CLASS_ = 'level-legend';
 
 
 /** @private @const {string} */
-historian.LevelLine.LINE_CLASS_ = 'level-line';
-
-
-/** @private @const {string} */
 historian.LevelLine.VIEW_INFO_CLASS_ = 'level-view-info';
 
 
@@ -137,14 +176,17 @@ historian.LevelLine.TIME_INFO_CLASS_ = 'level-timeinfo';
 
 
 /**
- * Removes all level related elemnts from the DOM.
+ * Removes all level related elements from the DOM.
  */
 historian.LevelLine.prototype.clear = function() {
-  $('.' + historian.LevelLine.VIEW_INFO_CLASS_).remove();
-  $('.' + historian.LevelLine.LINE_CLASS_).remove();
-  $('.' + historian.LevelLine.LEGEND_CLASS_).remove();
-  $('.' + historian.LevelLine.LINE_HIGHLIGHTER_CLASS_).remove();
-  $('.' + historian.LevelLine.TIME_INFO_CLASS_).remove();
+  if (!this.container_) {
+    return;
+  }
+  this.container_.find(historian.LevelLine.VIEW_INFO_CLASS_).remove();
+  this.container_.find(LINE_CLASS_).remove();
+  this.container_.find(historian.LevelLine.LEGEND_CLASS_).remove();
+  this.container_.find(historian.LevelLine.LINE_HIGHLIGHTER_CLASS_).remove();
+  this.container_.find(historian.LevelLine.TIME_INFO_CLASS_).remove();
 };
 
 
@@ -181,13 +223,7 @@ historian.LevelLine.Data = function(data, context, enableSampling) {
   this.processedData_ = this.initialData_;
 
   /**
-   * Whether the filtered data is valid or has been invalidated.
-   * @private {boolean}
-   */
-  this.filteredValid_ = false;
-
-  /**
-   * Data that has been filtered with isInViewableRange.
+   * Data that has been filtered with inTimeRange.
    * Invalidated on pan or zoom.
    * @private {!Array<historian.Entry>}
    */
@@ -245,10 +281,10 @@ historian.LevelLine.prototype.displayTotalCharge_ = function() {
 
   // Get all the data points visible in the current view.
   // We don't want sampled data, so use the original data points.
-  var startTime = this.context_.xScale.invert(0);
-  var endTime = this.context_.xScale.invert(
+  var startTime = this.context_.invertPosition(0);
+  var endTime = this.context_.invertPosition(
       this.context_.visSize[historian.constants.WIDTH]);
-  var visibleData = historian.LevelLine.Data.inViewableRange(
+  var visibleData = historian.utils.inTimeRange(
       startTime, endTime, this.levelData_);
 
   var total = historian.utils.calculateTotalChargeFormatted(visibleData);
@@ -283,69 +319,15 @@ historian.LevelLine.calculateAvgCurrent_ = function(data) {
  * @return {!Array<historian.Entry>} The data to display.
  */
 historian.LevelLine.Data.prototype.getDisplayedData = function() {
-  if (!this.filteredValid_) {
-    var startTime = this.context_.xScale.invert(0);
-    var endTime = this.context_.xScale.invert(
-        this.context_.visSize[historian.constants.WIDTH]);
+  var startTime = this.context_.invertPosition(0);
+  var endTime = this.context_.invertPosition(
+      this.context_.visSize[historian.constants.WIDTH]);
 
-    this.filteredData_ = historian.LevelLine.Data.inViewableRange(
-        startTime, endTime, this.processedData_);
-    historian.LevelLine.Data.adjustLevelData_(
-        this.filteredData_, this.initialData_);
-  }
+  this.filteredData_ = historian.utils.inTimeRange(
+      startTime, endTime, this.processedData_);
+  historian.LevelLine.Data.adjustLevelData_(
+      this.filteredData_, this.initialData_);
   return this.filteredData_;
-};
-
-
-/**
- * Returns a copy of the data points visible in the current time range using
- * binary search.
- * The data entries should be contiguous and non overlapping. Both the query
- * time ranges and data entry time ranges should have an inclusive start time
- * and exclusive end time.
- * @param {number} startTime The start time of the viewable time range.
- * @param {number} endTime The end time of the viewable time range.
- * @param {!Array<historian.Entry>} data The data to filter.
- * @return {!Array<historian.Entry>} The visible points.
- */
-historian.LevelLine.Data.inViewableRange = function(startTime, endTime, data) {
-  if (goog.array.isEmpty(data)) {
-    return [];
-  }
-  // Requesting range that comes after last end time of data range or before
-  // first start time of data range.
-  if (startTime >= data[data.length - 1].endTime ||
-      endTime <= data[0].startTime) {
-    return [];
-  }
-
-  var startObj = {
-    startTime: startTime
-  };
-  var startIndex = goog.array.binarySearch(data, startObj, function(d1, d2) {
-    return d1.startTime - d2.startTime;
-  });
-  if (startIndex < 0) {
-    // If the start time was not found in the array, binarySearch returns the
-    // index it would have been inserted in, -1.
-    startIndex = -(startIndex + 1);
-
-    // We want the element that is right before the insertion point.
-    if (startIndex != 0) {
-      startIndex--;
-    }
-  }
-  var endObj = {
-    endTime: endTime
-  };
-  var endIndex = goog.array.binarySearch(data, endObj, function(d1, d2) {
-    return d1.endTime - d2.endTime;
-  });
-
-  if (endIndex < 0) {
-    endIndex = -(endIndex + 1);
-  }
-  return goog.array.slice(data, startIndex, endIndex + 1);
 };
 
 
@@ -408,7 +390,6 @@ historian.LevelLine.Data.adjustLevelData_ =
  * @private
  */
 historian.LevelLine.Data.prototype.processData_ = function(initialLoad) {
-  this.filteredValid_ = false;
   if (this.enableSampling_) {
     var process = initialLoad ||
         (this.context_.msPerPixel() > historian.time.MSECS_IN_SEC);
@@ -429,11 +410,65 @@ historian.LevelLine.Data.prototype.processData_ = function(initialLoad) {
  * @private
  */
 historian.LevelLine.prototype.renderLevelLine_ = function() {
-  this.context_.svgLevel.select('.' + historian.LevelLine.LINE_CLASS_).remove();
+  this.context_.svgLevel.selectAll('.' + LINE_CLASS_).remove();
+
   var displayedData = this.displayedLevelData_.getDisplayedData();
-  this.context_.svgLevel.append('svg:path')
-      .attr('d', this.levelLine_(displayedData))
-      .attr('class', historian.LevelLine.LINE_CLASS_ + ' ' + this.config_.id);
+  if (this.config_.isRateOfChange) {
+    this.renderRateOfChange_(displayedData);
+  } else {
+    this.renderLine_(displayedData);
+  }
+};
+
+
+/**
+ * Renders a line with the given data.
+ * @param {!Array<historian.Entry>} data The data to display.
+ * @private
+ */
+historian.LevelLine.prototype.renderLine_ = function(data) {
+  var classes = [LINE_CLASS_, this.config_.id];
+  var line = this.context_.svgLevel.append('svg:path')
+      .attr('d', this.levelLine_(data))
+      .attr('class', classes.join(' '));
+
+  var opacity = this.config_.name == historian.metrics.Csv.POWERMONITOR ?
+      POWERMONITOR_OPACITY_DEFAULT_ : OPACITY_DEFAULT_;
+  var showLine = this.container_.find(SHOW_LINE_TOGGLE_).is(':checked');
+  line.style('opacity', opacity)
+      .style('display', showLine ? 'inline' : 'none');
+};
+
+
+/**
+ * Renders the rate of change for a series.
+ * @param {!Array<historian.Entry>} rateOfChangeData The rate of change
+ *     data to display.
+ * @private
+ */
+historian.LevelLine.prototype.renderRateOfChange_ =
+    function(rateOfChangeData) {
+  rateOfChangeData.forEach(function(d, i) {
+    // Plot each entry as a separate line.
+    // Rate of change data is different to the usual level data. Level data
+    // represents values at points in time e.g. 99 at 10am, while the
+    // rate of change data represents values over a period of time.
+    // e.g. the rate of change for the time period 10am - 11am was 3.
+    // It may also be discontinuous.
+    var points = [
+      {
+        startTime: d.startTime,
+        endTime: d.endTime,
+        value: d.value
+      },
+      {
+        startTime: d.endTime,
+        endTime: d.endTime,
+        value: d.value
+      }
+    ];
+    this.renderLine_(points);
+  }, this);
 };
 
 
@@ -501,14 +536,23 @@ historian.LevelLine.prototype.renderLegend_ = function() {
  * Renders the hover line and battery level text on mouse move.
  */
 historian.LevelLine.prototype.renderTimeInfo = function() {
+  if (!this.container_.find(SHOW_LINE_TOGGLE_).is(':checked')) {
+    return;
+  }
+
   // Get coordinates relative to SVG rather than page.
   var coords = d3.mouse(this.context_.graph[0]);
+  // Don't render the time info line if the mouse is left of the start of the
+  // rendered bar data. e.g. hovering over the series name.
+  if (coords[0] < historian.Context.MARGINS.LEFT) {
+    return;
+  }
   // Position the hoverLine x coordinate to be on the mouse coordinates.
   this.renderTimePoint_(coords[0]);
 
   // Get the time value of the chart corresponding to the mouse position.
-  var xValue =
-      this.context_.xScale.invert(coords[0] - historian.Context.MARGINS.LEFT);
+  var xValue = this.context_.invertPosition(
+      coords[0] - historian.Context.MARGINS.LEFT);
 
   // Get the index of the data point corresponding to the time value.
   // The bisector finds where the time value bisects the data array.
@@ -570,17 +614,6 @@ historian.LevelLine.prototype.renderLevelSummaries = function() {
       });
     }
   }
-  var lines = this.context_.svgLevelSummaries.selectAll('.level-summary')
-      .data(levelDrops, function(levelDrop) {
-        return levelDrop.startTime;
-      });
-  lines.enter().append('line')
-      .attr('class', 'level-summary');
-  lines.attr('x1', function(d) { return d.x1; })
-      .attr('x2', function(d) { return d.x2; })
-      .attr('y1', function(d) { return d.y1; })
-      .attr('y2', function(d) { return d.y2; });
-  lines.exit().remove();
   // Renders a vertical box to make the level drop prominent.
   var boxHeight = this.context_.visSize[historian.constants.HEIGHT];
   var boxes = this.context_.svgLevelBoxes.selectAll('rect')
@@ -599,19 +632,21 @@ historian.LevelLine.prototype.renderLevelSummaries = function() {
 
 /**
  * Class for displaying information about the time and battery level
- * durrently hovered by the mouse.
+ * currently hovered over by the mouse.
  *
  * @param {!historian.Context} context The visualisation context.
  * @param {!historian.LevelLine.Data} levelData
  *     The battery level series to display.
  * @param {!historian.LevelConfiguration} config The config for the metric.
  * @param {!historian.LevelSummaryData} levelSummaryData
+ * @param {!Object<!Array<!historian.Entry>>=} opt_levelSummaries
+ *     Additional data to display for each level drop.
  * @constructor
  * @struct
  * @private
  */
 historian.LevelLine.TimeInfo_ = function(
-    context, levelData, config, levelSummaryData) {
+    context, levelData, config, levelSummaryData, opt_levelSummaries) {
   /** @private {!historian.Context} */
   this.context_ = context;
 
@@ -629,6 +664,9 @@ historian.LevelLine.TimeInfo_ = function(
 
   /** @private {!historian.LevelSummaryData} */
   this.levelSummaryData_ = levelSummaryData;
+
+  /** @private {!Object<!Array<!historian.Entry>>|undefined} */
+  this.levelDetailSummary_ = opt_levelSummaries;
 
   /**
    * Contents of time info lines.
@@ -649,6 +687,45 @@ historian.LevelLine.TimeInfo_.prototype.addLine_ = function(line) {
 
 
 /**
+ * Formats and adds to the display any extra summary information for a level
+ * drop.
+ * @param {number} start The start time of the displayed data.
+ * @param {number} end The end time of the displayed data.
+ * @private
+ */
+historian.LevelLine.TimeInfo_.prototype.formatExtraSummary_ = function(
+    start, end) {
+  if (!this.levelDetailSummary_) {
+    return;
+  }
+
+  for (var group in this.levelDetailSummary_) {
+    var displayed = historian.utils.inTimeRangeMulti(
+        start, end, this.levelDetailSummary_[group]);
+    if (displayed.length == 0) {
+      continue;
+    }
+    this.addLine_('<br><b>' + group + ':</b>');
+    displayed.forEach(function(d) {
+      var value = d.value;
+      switch (group) {
+        case historian.metrics.Csv.LOW_POWER_STATE:
+          this.addLine_(goog.string.subs('%s: %s times, %s total', value.name,
+              value.count, value.time));
+          break;
+        case historian.metrics.Csv.APP_CPU_USAGE:
+          this.addLine_(goog.string.subs('%s: %s user time, %s system time',
+              value.name, value.userTime, value.systemTime));
+          break;
+        default:
+          this.addLine_(JSON.stringify(value));
+      }
+    }, this);
+  }
+};
+
+
+/**
  * Updates the battery level display for the given data index.
  * @param {number} i Index of the data point of the start of the duration
  *     to display.
@@ -657,23 +734,32 @@ historian.LevelLine.TimeInfo_.prototype.addLine_ = function(line) {
  */
 historian.LevelLine.TimeInfo_.prototype.render = function(i, coords,
     time) {
+  // Calculate details for text display.
+  var loc = this.context_.location;
+  var timeText = 'Current time: ' + historian.time.getTime(time, loc);
+
   // Start and end level data points corresponding to index.
   this.levelStart_ = this.levelData_.getDisplayedData()[i];
   this.levelEnd_ = this.levelData_.getDisplayedData()[i + 1];
 
   var startValue = this.levelStart_.value;
   var endValue = this.levelEnd_.value;
-  var loc = this.context_.location;
-  // Calculate details for text display.
-  var timeText = 'Current time: ' + historian.time.getTime(time, loc);
-  var batteryLevelText = goog.string.subs('%s: between %s and %s',
-      this.config_.levelDisplayText, startValue, endValue);
 
-  if (this.config_.formatLevel) {
-    batteryLevelText += goog.string.subs(' (%s and %s mAh)',
-        this.config_.formatLevel(goog.asserts.assertNumber(startValue)),
-        this.config_.formatLevel(goog.asserts.assertNumber(endValue)));
+  var batteryLevelText = '';
+  if (this.config_.isRateOfChange) {
+    batteryLevelText = goog.string.subs('%s: %s',
+        this.config_.levelDisplayText, this.levelStart_.value.toFixed(2));
+  } else {
+    batteryLevelText = goog.string.subs('%s: between %s and %s',
+        this.config_.levelDisplayText, startValue, endValue);
+
+    if (this.config_.formatLevel) {
+      batteryLevelText += goog.string.subs(' (%s and %s mAh)',
+          this.config_.formatLevel(goog.asserts.assertNumber(startValue)),
+          this.config_.formatLevel(goog.asserts.assertNumber(endValue)));
+    }
   }
+
   var duration = historian.time.formatDuration(
       this.levelEnd_.startTime - this.levelStart_.startTime);
 
@@ -692,6 +778,8 @@ historian.LevelLine.TimeInfo_.prototype.render = function(i, coords,
     this.addLine_(dischargeText);
   }
   this.addLine_(durationText);
+  this.formatExtraSummary_(
+      this.levelStart_.startTime, this.levelEnd_.startTime);
 
   // Set text display to be right of mouse cursor, at top of page.
   this.renderTimeInfo_(coords[0], coords[1]);
@@ -717,7 +805,7 @@ historian.LevelLine.TimeInfo_.prototype.renderTimeInfo_ = function(x, y) {
       });
   this.lines_.forEach(function(line, index) {
     $('<div></div>')
-        .text(line)
+        .html(line)
         .appendTo(info);
   });
   info.appendTo(container);
@@ -744,10 +832,10 @@ historian.LevelLine.TimeInfo_.prototype.renderHoveredSegment_ = function() {
       .select('.' + historian.LevelLine.LINE_HIGHLIGHTER_CLASS_).remove();
   if (this.levelStart_ != null && this.levelEnd_ != null) {
     var xStart = this.context_.xScale(this.levelStart_.startTime);
-    var yStart = this.context_.yScale(
-        /** @type {number} */ (this.levelStart_.value));
     var xEnd = this.context_.xScale(this.levelEnd_.startTime);
-    var yEnd = this.context_.yScale(
+
+    var yStart = this.context_.yScale(this.levelStart_.value);
+    var yEnd = this.config_.isRateOfChange ? yStart : this.context_.yScale(
         /** @type {number} */ (this.levelEnd_.value));
 
     // Highlight section of battery level line currently being mouse overed.
@@ -799,3 +887,5 @@ historian.LevelLine.calculateDischarge_ = function(d1, d2, config) {
   var rate = historian.time.MSECS_IN_HOUR / timeDiff * levelDifference;
   return config.formatDischarge(rate);
 };
+
+});  // goog.scope

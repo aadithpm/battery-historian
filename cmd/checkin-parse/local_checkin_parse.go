@@ -59,14 +59,21 @@ func main() {
 	if strings.Contains(bs, "Exception occurred while dumping") {
 		log.Fatalf("Exception found in battery dump.")
 	}
-	s := &sessionpb.Checkin{Checkin: proto.String(bs)}
+	m, err := bugreportutils.ParseMetaInfo(br)
+	if err != nil {
+		log.Fatalf("Unable to get meta info: %v", err)
+	}
+	s := &sessionpb.Checkin{
+		Checkin:          proto.String(bs),
+		BuildFingerprint: proto.String(m.BuildFingerprint),
+	}
 	pkgs, errs := packageutils.ExtractAppsFromBugReport(br)
 	if len(errs) > 0 {
 		log.Fatalf("Errors encountered when getting package list: %v", errs)
 	}
 
 	var ctr checkinutil.IntCounter
-	stats, warns, errs := checkinparse.ParseBatteryStats(&ctr, checkinparse.CreateCheckinReport(s), pkgs)
+	stats, warns, errs := checkinparse.ParseBatteryStats(&ctr, checkinparse.CreateBatteryReport(s), pkgs)
 	if len(warns) > 0 {
 		log.Printf("Encountered unexpected warnings: %v\n", warns)
 	}

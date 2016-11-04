@@ -21,6 +21,8 @@
 goog.module('historian.utils');
 goog.module.declareLegacyNamespace();
 
+var Range = goog.require('goog.math.Range');
+var array = goog.require('goog.array');
 var asserts = goog.require('goog.asserts');
 var googString = goog.require('goog.string');
 var time = goog.require('historian.time');
@@ -139,13 +141,13 @@ exports.describeBytes = function(bytes) {
 
 
 /**
- * Creates a valid HTML ID by removing non alphanumeric and non underscore
+ * Creates a valid HTML ID by removing non-alphanumeric, underscore, and hyphen
  * characters from the string, and converting to lower case.
  * @param {string} str The string to create an ID out of.
  * @return {string} The ID.
  */
 exports.toValidID = function(str) {
-  return str.replace(/[^a-z0-9_]/ig, '').toLowerCase();
+  return str.replace(/[^a-z0-9_\-]/ig, '').toLowerCase();
 };
 
 
@@ -178,4 +180,134 @@ exports.calculateTotalCharge = function(data) {
  */
 exports.calculateTotalChargeFormatted = function(data) {
   return exports.calculateTotalCharge(data).toFixed(2);
+};
+
+
+/**
+ * Returns a shallow copy of the data points that fall in the given time range.
+ * The data can have multiple entries with the same start and end times. For
+ * performance reasons, this should not be called for large datasets (eg. with
+ * 80,000+ points).
+ * @param {number} startTime The start of the time range.
+ * @param {number} endTime The end of the time range.
+ * @param {!Array<historian.Entry|historian.AggregatedEntry>} data
+ *     The data to filter.
+ * @return {!Array<historian.Entry|historian.AggregatedEntry>} The data
+ *     falling in the given time range.
+ */
+exports.inTimeRangeMulti = function(startTime, endTime, data) {
+  var range = new Range(startTime, endTime);
+
+  return data.filter(function(d) {
+    return Range.hasIntersection(range, new Range(d.startTime, d.endTime)) &&
+        endTime != d.startTime && startTime != d.endTime;
+  });
+};
+
+
+/**
+ * Returns a shallow copy of the data points that fall in the given time range.
+ * The data entries should be contiguous and non overlapping. Both the query
+ * time ranges and data entry time ranges should have an inclusive start time
+ * and exclusive end time.
+ * @param {number} startTime The start of the time range.
+ * @param {number} endTime The end of the time range.
+ * @param {!Array<historian.Entry|historian.AggregatedEntry>} data
+ *     The data to filter.
+ * @return {!Array<historian.Entry|historian.AggregatedEntry>} The data
+ *     falling in the given time range.
+ */
+exports.inTimeRange = function(startTime, endTime, data) {
+  if (array.isEmpty(data)) {
+    return [];
+  }
+  // Requesting range that comes after last end time of data range or before
+  // first start time of data range.
+  if (startTime >= data[data.length - 1].endTime ||
+      endTime <= data[0].startTime) {
+    return [];
+  }
+
+  var startObj = {
+    startTime: startTime
+  };
+  var startIndex = array.binarySearch(data, startObj, function(d1, d2) {
+    return d1.startTime - d2.startTime;
+  });
+  if (startIndex < 0) {
+    // If the start time was not found in the array, binarySearch returns the
+    // index it would have been inserted in, -1.
+    startIndex = -(startIndex + 1);
+
+    // We want the element that is right before the insertion point.
+    if (startIndex != 0) {
+      startIndex--;
+    }
+  }
+  var endObj = {
+    endTime: endTime
+  };
+  var endIndex = array.binarySearch(data, endObj, function(d1, d2) {
+    return d1.endTime - d2.endTime;
+  });
+
+  if (endIndex < 0) {
+    endIndex = -(endIndex + 1);
+  }
+  return array.slice(data, startIndex, endIndex + 1);
+};
+
+
+/**
+ * Sets the dropdown options and applies select2 styling. Any existing options
+ * are removed.
+ * @param {!jQuery} dropdown The jQuery dropdown element to add the options to.
+ * @param {!Array<string|{val: string, html: string}>} options
+ *     The strings to set as the option values and displayed html,
+ *     or objects with the option values and displayed html.
+ * @param {string} placeholder Displayed when no option is selected.
+ */
+exports.setupDropdown = function(dropdown, options, placeholder) {
+  dropdown.empty();
+  // Append an empty element, required for select2 placeholder to show.
+  dropdown.append($('<option></option>'));
+  options.forEach(function(option) {
+    var isString = typeof option == 'string';
+    var val = isString ? option : option.val;
+    var html = isString ? option : option.html;
+    dropdown.append($('<option></option>')
+        .val(asserts.assertString(val))
+        .html(asserts.assertString(html))
+    );
+  });
+  dropdown.select2({
+    placeholder: placeholder,
+    allowClear: true,
+    width: 'resolve'
+  });
+};
+
+
+/**
+ * Generates the first derivative for the given data.
+ * @param {!Array<!historian.Entry>} data The data to generate the derivative
+ *     for.
+ * @return {!Array<!historian.Entry>}
+ */
+exports.generateDerivative = function(data) {
+  var derivative = [];
+  data.forEach(function(cur, i) {
+    if (i == data.length - 1) {
+      return;
+    }
+    var next = data[i + 1];
+    var dy = next.value - cur.value;
+    var dx = (next.startTime - cur.startTime) / time.MSECS_IN_HOUR;
+    derivative.push({
+      startTime: cur.startTime,
+      endTime: next.startTime,
+      value: (dx == 0) ? 0 : dy / dx
+    });
+  });
+  return derivative;
 };
